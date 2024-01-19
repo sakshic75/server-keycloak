@@ -5,7 +5,8 @@
   "resource": "resource-app",
   "verify-token-audience": true,
   "credentials": {
-    "secret": "j689iftdC0iHqUGuK4tQeYrprIYaje05"
+    "//secret": "j689iftdC0iHqUGuK4tQeYrprIYaje05",
+    "secret":"tQFvZBNksjeWjFsraNCcSgHbNVJEKIUh"
   },
   "bearerOnly": false,
 "standardFlowEnabled": true,
