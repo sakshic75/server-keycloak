@@ -153,7 +153,7 @@ app.post('/custom-login', async (req, res) => {
     } else {
       // If the error does not have an HTTP status code, send a generic 500 error
       console.error('Error:', error.message);
-      res.status(500).send('Internal Server Error');
+      res.status(500).send(error.message);
     }
   }
 });
