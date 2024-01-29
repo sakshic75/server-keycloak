@@ -1,11 +1,11 @@
 {
   "realm": "myrealm",
-  "auth-server-url": "http://localhost:8080",
+  "auth-server-url": "http://172.17.0.3:8080",
   "ssl-required": "external",
   "resource": "resource-app",
   "verify-token-audience": true,
   "credentials": {
-    "//secret": "j689iftdC0iHqUGuK4tQeYrprIYaje05",
+    "//secret": "JHQXDEIyW3K0C94wdgSeXS6ell3nCWXf",
     "secret":"tQFvZBNksjeWjFsraNCcSgHbNVJEKIUh"
   },
   "bearerOnly": false,

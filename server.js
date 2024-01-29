@@ -27,11 +27,35 @@ const keycloak = new Keycloak({
 
 
 // Function to introspect the token using Keycloak Introspection endpoint
-async function introspectToken(accessToken) {
+async function getResourceSet(accessToken) {
   try {
-    const introspectionResponse = await axios.post(
-      `${keycloakConfig['auth-server-url']}/realms/${keycloakConfig.realm}/protocol/openid-connect/token/introspect`,
-      `token=${accessToken}&client_id=${keycloakConfig.resource}&client_secret=${keycloakConfig.credentials.secret}`,
+    const response = await axios.get(
+      `${keycloakConfig['auth-server-url']}/realms/${keycloakConfig.realm}/authz/protection/resource_set?uri=/settings`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    return response.data;
+  } catch (error) {
+    console.error('Error during resource set request:', error.message);
+    throw error;
+  }
+}
+
+app.post('/settings', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).send('Bad Request: Missing required parameters.');
+    }
+
+    const response = await axios.post(
+      `${keycloakConfig['auth-server-url']}/realms/${keycloakConfig.realm}/protocol/openid-connect/token`,
+      `grant_type=password&client_id=${keycloakConfig.resource}&client_secret=${keycloakConfig.credentials.secret}&username=${username}&password=${password}`,
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -39,62 +63,53 @@ async function introspectToken(accessToken) {
       }
     );
 
-    return introspectionResponse.data;
-  } catch (error) {
-    console.error('Error during token introspection:', error.message);
-    throw error;
-  }
-}
+    const accessToken = response.data.access_token;
 
-// Example route without using keycloak.protect middleware
-app.get('/settings', keycloak.protect(), async (req, res) => {
-  try {
-    const authorizationHeader = req.headers['authorization'];
+    // Make a GET request to the resource_set endpoint
+    const resourceSet = await getResourceSet(accessToken);
 
-    if (!authorizationHeader) {
-      return res.status(401).send('Unauthorized');
-    }
+    // Log resource set for debugging
+    console.log('Resource Set:', resourceSet);
 
-    // Extract the access token from the Authorization header
-    const accessToken = authorizationHeader.split(' ')[1];
+    // Check if the resourceSet is not null and has at least one element
+    if (Array.isArray(resourceSet) && resourceSet.length > 0) {
+      // Extract the first value from the resourceSet as the id
+      const id = resourceSet[0];
 
-    // Introspect the token to check if it is active and authorized
-    const introspectionResult = await introspectToken(accessToken);
-
-    // Log introspection result for debugging
-    console.log('Introspection Result:', introspectionResult);
-
-    // Check if the token is active
-    if (introspectionResult.active) {
-      console.log('Realm Roles:', introspectionResult.realm_access.roles);
-      console.log('Resource Access:', introspectionResult.resource_access);
-      console.log('Scopes:', introspectionResult.scope);
-
-      const decodedToken = jwt.decode(accessToken, { complete: true });
-      if (decodedToken && decodedToken.realm_access && decodedToken.realm_access.roles.includes('Engineer')) {
-        const resourceAccess = decodedToken.resource_access;
-        if (
-          resourceAccess &&
-          resourceAccess['res:settings'] &&
-          resourceAccess['res:settings'].roles.includes('Engineer') &&
-          resourceAccess['res:settings'].scopes.includes('settings-view')
-        ) {
-          res.send('This is a secure route for engineers with "view" scope for res:settings.');
-        } else {
-          res.status(403).send('Forbidden: Insufficient scope');
+      // Make a POST request to the Keycloak token endpoint with additional information
+      const umaTicketResponse = await axios.post(
+        `${keycloakConfig['auth-server-url']}/realms/${keycloakConfig.realm}/protocol/openid-connect/token`,
+        `grant_type=urn:ietf:params:oauth:grant-type:uma-ticket&client_id=${keycloakConfig.resource}&client_secret=${keycloakConfig.credentials.secret}&audience=${keycloakConfig.resource}&permission=${id}&response_mode=permissions`,
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: `Bearer ${accessToken}`,
+          },
         }
-      } else {
-        res.status(403).send('Forbidden: Insufficient role');
-      }
+      );
+
+      // Log umaTicketResponse for debugging
+      console.log('UMA Ticket Response:', umaTicketResponse.data);
+
+      // Return umaTicketResponse as a JSON response
+      res.json(umaTicketResponse.data);
     } else {
-      res.status(401).send('Unauthorized: Token is not active');
+      // If resourceSet is null or empty, return an appropriate response
+      res.status(404).send('Resource Set not found or empty');
     }
   } catch (error) {
     console.error('Error:', error.message);
-    res.status(500).send(error.message);
+
+    // Check for a 403 status in the error response
+    if (error.response && error.response.status === 403) {
+      // Send the entire error.response.data as the response
+      res.status(403).json(error.response.data);
+    } else {
+      // Handle other errors with a generic 500 status and message
+      res.status(500).send(error.message);
+    }
   }
 });
-
 // /custom-login route
 app.post('/custom-login', async (req, res) => {
   try {
@@ -132,11 +147,12 @@ app.post('/custom-login', async (req, res) => {
 
     // Check if the token is valid and authorized
     if (keycloakResponse.data.active) {
+      console.log(keycloakResponse.data.active);
       const roles = keycloakResponse.data.realm_access.roles;
 
       if (roles.includes('Engineer')) {
         // The user has the required role
-        res.send('This is a secure route for engineers.');
+        res.send('This is a secure route to /settings for  engineers.');
       } else {
         // The user does not have the required role
         res.status(403).send('Forbidden: User has no Engineer role');
